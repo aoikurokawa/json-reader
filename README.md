@@ -12,8 +12,15 @@ https://storage.googleapis.com/jito-mainnet/958/ny-mainnet-tip-router-1/958-merk
 ```bash
 cargo build --release
 
-hyperfine --warmup 3 \
-  './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 serde-json'
+hyperfine --warmup 3 --min-runs 20 --export-markdown bench.md \
+  -n serde_json       './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 serde-json' \
+  -n serde_json_slice './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 serde-json-slice' \
+  -n simd_json        './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 simd-json'
+  
+  
+hyperfine --warmup 3 --min-runs 20 --export-markdown bench.md \
+  -n serde_json_slice './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 serde-json-slice' \
+  -n sonic_rs         './target/release/merkle-tree-collection-reader --save-path /tmp/merkle-tree-collection/958 --epoch 958 sonic-rs'
 ```
 
 ### Serde JSON

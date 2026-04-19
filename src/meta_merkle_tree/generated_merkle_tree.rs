@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufReader, Write},
+    io::{BufReader, BufWriter, Write},
     path::PathBuf,
 };
 
@@ -40,6 +40,12 @@ pub enum MerkleRootGeneratorError {
 
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    BincodeEncodeError(#[from] bincode::error::EncodeError),
+
+    #[error(transparent)]
+    BincodeDecodeError(#[from] bincode::error::DecodeError),
 
     #[error("MerkleRootGenerator error")]
     MerkleRootGeneratorError,
@@ -236,7 +242,7 @@ impl GeneratedMerkleTreeCollection {
         })
     }
 
-    /// Load a serialized GeneratedMerkleTreeCollection from file path
+    /// Load via `serde_json::from_reader` over a buffered file.
     pub fn new_from_file_serde_json(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -245,13 +251,39 @@ impl GeneratedMerkleTreeCollection {
         Ok(tree)
     }
 
-    /// Load a serialized GeneratedMerkleTreeCollection from file path
-    pub fn new_from_file(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let tree: Self = serde_json::from_reader(reader)?;
+    /// Load via `serde_json::from_slice` after slurping the whole file into memory.
+    pub fn new_from_file_serde_json_slice(
+        path: &PathBuf,
+    ) -> Result<Self, MerkleRootGeneratorError> {
+        let bytes = std::fs::read(path)?;
+        let tree: Self = serde_json::from_slice(&bytes)?;
 
         Ok(tree)
+    }
+
+    /// Load from a streamed bincode file.
+    pub fn new_from_file_bincode(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+        let tree: Self =
+            bincode::serde::decode_from_std_read(&mut reader, bincode::config::standard())?;
+
+        Ok(tree)
+    }
+
+    /// Write the collection out as a streamed bincode file.
+    pub fn write_bincode_to_file(&self, path: &PathBuf) -> Result<(), MerkleRootGeneratorError> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+        bincode::serde::encode_into_std_write(self, &mut writer, bincode::config::standard())?;
+        writer.flush()?;
+
+        Ok(())
+    }
+
+    /// Load a serialized GeneratedMerkleTreeCollection from file path
+    pub fn new_from_file(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
+        Self::new_from_file_serde_json(path)
     }
 
     /// Write a GeneratedMerkleTreeCollection to a filepath
