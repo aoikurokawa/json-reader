@@ -47,6 +47,15 @@ pub enum MerkleRootGeneratorError {
     #[error(transparent)]
     BincodeDecodeError(#[from] bincode::error::DecodeError),
 
+    #[error(transparent)]
+    WincodeWriteError(#[from] wincode::WriteError),
+
+    #[error(transparent)]
+    WincodeReadError(#[from] wincode::ReadError),
+
+    #[error(transparent)]
+    WincodeIoWriteError(#[from] wincode::io::WriteError),
+
     #[error("MerkleRootGenerator error")]
     MerkleRootGeneratorError,
 
@@ -60,7 +69,7 @@ pub enum MerkleRootGeneratorError {
     UnknownDistributionProgram,
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub struct GeneratedMerkleTreeCollection {
     pub generated_merkle_trees: Vec<GeneratedMerkleTree>,
     pub bank_hash: String,
@@ -259,6 +268,35 @@ impl GeneratedMerkleTreeCollection {
         let tree: Self = serde_json::from_slice(&bytes)?;
 
         Ok(tree)
+    }
+
+    /// Load from a wincode file (bincode 1.x-compatible wire format, zero-copy friendly).
+    pub fn new_from_file_wincode(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
+        let bytes = std::fs::read(path)?;
+        let config = wincode::config::Configuration::default().disable_preallocation_size_limit();
+        let collection = <wincode_schema::CollectionW as wincode::config::Deserialize<'_, _>>::deserialize(
+            &bytes, config,
+        )?;
+        Ok(collection)
+    }
+
+    /// Write the collection out as a wincode file.
+    pub fn write_wincode_to_file(&self, path: &PathBuf) -> Result<(), MerkleRootGeneratorError> {
+        use wincode::io::Writer;
+
+        let config = wincode::config::Configuration::default().disable_preallocation_size_limit();
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
+        let mut adapter = wincode::io::std_write::WriteAdapter::new(writer);
+        <wincode_schema::CollectionW as wincode::config::Serialize<_>>::serialize_into(
+            &mut adapter,
+            self,
+            config,
+        )?;
+        // BufWriter's Drop attempts to flush but silently swallows errors; flush
+        // explicitly so a short write or I/O failure propagates.
+        adapter.finish()?;
+        Ok(())
     }
 
     /// Load from a streamed bincode file.
@@ -665,6 +703,49 @@ impl Ord for Delegation {
 impl PartialOrd<Self> for Delegation {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+mod wincode_schema {
+    use solana_program::{hash::Hash, pubkey::Pubkey};
+    use wincode::{SchemaRead, SchemaWrite};
+
+    wincode::pod_wrapper! {
+        unsafe struct PodPubkey(Pubkey);
+        unsafe struct PodHash(Hash);
+    }
+
+    #[derive(SchemaWrite, SchemaRead)]
+    #[wincode(from = "super::GeneratedMerkleTreeCollection")]
+    pub struct CollectionW {
+        generated_merkle_trees: Vec<TreeW>,
+        bank_hash: String,
+        epoch: u64,
+        slot: u64,
+    }
+
+    #[derive(SchemaWrite, SchemaRead)]
+    #[wincode(from = "super::GeneratedMerkleTree")]
+    pub struct TreeW {
+        distribution_program: PodPubkey,
+        distribution_account: PodPubkey,
+        merkle_root_upload_authority: PodPubkey,
+        merkle_root: PodHash,
+        tree_nodes: Vec<NodeW>,
+        max_total_claim: u64,
+        max_num_nodes: u64,
+    }
+
+    #[derive(SchemaWrite, SchemaRead)]
+    #[wincode(from = "super::TreeNode")]
+    pub struct NodeW {
+        claimant: PodPubkey,
+        claim_status_pubkey: PodPubkey,
+        claim_status_bump: u8,
+        staker_pubkey: PodPubkey,
+        withdrawer_pubkey: PodPubkey,
+        amount: u64,
+        proof: Option<Vec<[u8; 32]>>,
     }
 }
 
