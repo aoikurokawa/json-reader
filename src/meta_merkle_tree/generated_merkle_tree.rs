@@ -41,6 +41,9 @@ pub enum MerkleRootGeneratorError {
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
 
+    #[error(transparent)]
+    SimdJsonError(#[from] simd_json::Error),
+
     #[error("MerkleRootGenerator error")]
     MerkleRootGeneratorError,
 
@@ -236,7 +239,7 @@ impl GeneratedMerkleTreeCollection {
         })
     }
 
-    /// Load a serialized GeneratedMerkleTreeCollection from file path
+    /// Load via `serde_json::from_reader` over a buffered file.
     pub fn new_from_file_serde_json(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -245,13 +248,27 @@ impl GeneratedMerkleTreeCollection {
         Ok(tree)
     }
 
-    /// Load a serialized GeneratedMerkleTreeCollection from file path
-    pub fn new_from_file(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let tree: Self = serde_json::from_reader(reader)?;
+    /// Load via `serde_json::from_slice` after slurping the whole file into memory.
+    pub fn new_from_file_serde_json_slice(
+        path: &PathBuf,
+    ) -> Result<Self, MerkleRootGeneratorError> {
+        let bytes = std::fs::read(path)?;
+        let tree: Self = serde_json::from_slice(&bytes)?;
 
         Ok(tree)
+    }
+
+    /// Load via SIMD-accelerated `simd_json` (serde shim).
+    pub fn new_from_file_simd_json(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
+        let mut bytes = std::fs::read(path)?;
+        let tree: Self = simd_json::serde::from_slice(&mut bytes)?;
+
+        Ok(tree)
+    }
+
+    /// Load a serialized GeneratedMerkleTreeCollection from file path
+    pub fn new_from_file(path: &PathBuf) -> Result<Self, MerkleRootGeneratorError> {
+        Self::new_from_file_serde_json(path)
     }
 
     /// Write a GeneratedMerkleTreeCollection to a filepath

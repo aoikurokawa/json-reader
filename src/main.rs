@@ -21,6 +21,8 @@ struct Args {
 #[derive(Subcommand)]
 enum Commands {
     SerdeJson,
+    SerdeJsonSlice,
+    SimdJson,
 }
 
 pub fn merkle_tree_collection_file_name(epoch: u64) -> String {
@@ -30,13 +32,24 @@ pub fn merkle_tree_collection_file_name(epoch: u64) -> String {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    let merkle_tree_path = args
+        .save_path
+        .join(merkle_tree_collection_file_name(args.epoch));
+
     match args.command {
         Commands::SerdeJson => {
-            let merkle_tree_path = args
-                .save_path
-                .join(merkle_tree_collection_file_name(args.epoch));
             let _merkle_trees =
                 GeneratedMerkleTreeCollection::new_from_file_serde_json(&merkle_tree_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to load merkle tree: {e}"))?;
+        }
+        Commands::SerdeJsonSlice => {
+            let _merkle_trees =
+                GeneratedMerkleTreeCollection::new_from_file_serde_json_slice(&merkle_tree_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to load merkle tree: {e}"))?;
+        }
+        Commands::SimdJson => {
+            let _merkle_trees =
+                GeneratedMerkleTreeCollection::new_from_file_simd_json(&merkle_tree_path)
                     .map_err(|e| anyhow::anyhow!("Failed to load merkle tree: {e}"))?;
         }
     }
