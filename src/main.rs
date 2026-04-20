@@ -1,7 +1,8 @@
-use std::{path::PathBuf, time::Instant};
+use std::{path::PathBuf, str::FromStr, time::Instant};
 
 use clap::{Parser, Subcommand};
 use merkle_tree_collection_reader::meta_merkle_tree::generated_merkle_tree::GeneratedMerkleTreeCollection;
+use solana_sdk::pubkey::Pubkey;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -96,9 +97,20 @@ fn main() -> anyhow::Result<()> {
                 .save_path
                 .join(merkle_tree_collection_wincode_file_name(args.epoch));
             let start = Instant::now();
-            let _merkle_trees = GeneratedMerkleTreeCollection::new_from_file_wincode(&wincode_path)
+            let merkle_trees = GeneratedMerkleTreeCollection::new_from_file_wincode(&wincode_path)
                 .map_err(|e| anyhow::anyhow!("Failed to load merkle tree: {e}"))?;
             println!("wincode load: {:?}", start.elapsed());
+
+            let mut count = 0;
+            for merkle_tree in merkle_trees.generated_merkle_trees {
+                if merkle_tree.merkle_root_upload_authority
+                    == Pubkey::from_str("GZctHpWXmsZC1YHACTGGcHhYxjdRqQvTpYkb9LMvxDib").unwrap()
+                {
+                    count += 1;
+                }
+            }
+
+            println!("Old Merkle Tree Config: {count}");
         }
     }
 
